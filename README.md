@@ -1,13 +1,13 @@
 # Minecraft MediaPlayer Mod
 
-A simple MediaPlayer mod for Minecraft that lets you play YouTube videos directly in-game.
+A simple MediaPlayer mod for Minecraft that lets you play YouTube videos directly in-game — rendered onto a 3D block instead of a flat UI screen.
 
-The goal is pretty straightforward — bring some real-world media into your Minecraft world. Whether it’s background videos while you’re building or just experimenting with something different, this mod is meant to add a bit of extra life to the game.
+The idea is to bring some real-world media into your Minecraft world in a more immersive way. Just place the block and have videos playing on it while you build, mine, or mess around.
 
 ## Features
 
 * Play YouTube videos inside Minecraft
-* In-game screen/media player
+* Video rendered onto a 3D block
 * Lightweight and simple (for now)
 
 ## Current State
@@ -16,11 +16,11 @@ This project is still in an early stage. Things are pretty minimal and will like
 
 * Singleplayer only (no server support yet)
 * Expect bugs and rough edges
-* More features planned as development continues
+* More features planned over time
 
 ## Notes
 
-This is mainly an experimental / learning project, so updates might be a bit chaotic.
+This is mainly an experimental / learning project, so things might break or change without much warning.
 
 ## Contributing
 
