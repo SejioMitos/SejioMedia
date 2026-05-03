@@ -10,6 +10,11 @@ The idea is to bring some real-world media into your Minecraft world in a more i
 * Video rendered onto a 3D block
 * Lightweight and simple (for now)
 
+## Requirements
+
+* Minecraft 1.21
+* Fabric Loader
+
 ## Current State
 
 This project is still in an early stage. Things are pretty minimal and will likely change a lot.
@@ -18,17 +23,17 @@ This project is still in an early stage. Things are pretty minimal and will like
 * Expect bugs and rough edges
 * More features planned over time
 
+## Community
+
+Got feedback, ideas, or just want to see updates?
+
+Join the Discord:
+https://discord.gg/nqPjgKM8dg
+
 ## Notes
 
 This is mainly an experimental / learning project, so things might break or change without much warning.
 
 ## Contributing
-
-
-## Requirements
-
-* Minecraft 1.21
-* Fabric Loader
-
 
 Suggestions, feedback, and pull requests are welcome.
