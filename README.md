@@ -24,4 +24,11 @@ This is mainly an experimental / learning project, so things might break or chan
 
 ## Contributing
 
+
+## Requirements
+
+* Minecraft 1.21
+* Fabric Loader
+
+
 Suggestions, feedback, and pull requests are welcome.
