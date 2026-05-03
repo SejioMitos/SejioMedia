@@ -10,13 +10,13 @@ A Minecraft Fabric mod that renders YouTube videos onto a placeable in-game bloc
 
 ---
 
+
 ## Requirements
 
 - Minecraft 1.21
 - [Fabric Loader](https://fabricmc.net/use/installer/)
 - [Fabric API](https://modrinth.com/mod/fabric-api)
-- Windows — FFmpeg is installed automatically on first launch
-- Mac/Linux — FFmpeg must be installed manually via `brew install ffmpeg` or `apt install ffmpeg`
+- Windows only — Mac and Linux are not currently supported
 
 ---
 
