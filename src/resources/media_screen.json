@@ -1,19 +1,8 @@
 {
-	"type": "minecraft:block",
-	"pools": [
-		{
-			"rolls": 1,
-			"entries": [
-				{
-					"type": "minecraft:item",
-					"name": "mediascreen:media_screen"
-				}
-			],
-			"conditions": [
-				{
-					"condition": "minecraft:survives_explosion"
-				}
-			]
-		}
-	]
+	"variants": {
+		"facing=north": { "model": "mediascreen:block/media_screen" },
+		"facing=east": { "model": "mediascreen:block/media_screen", "y": 90 },
+		"facing=south": { "model": "mediascreen:block/media_screen", "y": 180 },
+		"facing=west": { "model": "mediascreen:block/media_screen", "y": 270 }
+	}
 }

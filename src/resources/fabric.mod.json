@@ -1,0 +1,31 @@
+{
+	"schemaVersion": 1,
+	"id": "mediascreen",
+	"version": "1.5",
+	"name": "MediaScreen",
+	"description": "Placeable monitor block that plays YouTube videos in-game",
+	"authors": ["Sejio"],
+	"contact": {
+		"homepage": "https://github.com/SejioMitos/SejioMedia",
+		"sources": "https://github.com/SejioMitos/SejioMedia",
+		"issues": "https://github.com/SejioMitos/SejioMedia/issues"
+	},
+	"license": "MIT",
+	"icon": "assets/mediascreen/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.mediascreen.MediaScreenMod"
+		],
+		"client": [
+			"com.mediascreen.MediaScreenClient"
+		]
+	},
+	"mixins": [],
+	"depends": {
+		"fabricloader": ">=0.15.0",
+		"minecraft": "~1.21",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
