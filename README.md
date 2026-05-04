@@ -10,6 +10,10 @@ A Minecraft Fabric mod that renders YouTube videos onto a placeable in-game bloc
 
 ---
 
+## NOTICE
+
+Source Code may be not updated to the latest ones when released
+
 
 ## Requirements
 
