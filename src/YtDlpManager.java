@@ -62,6 +62,7 @@ public class YtDlpManager {
 			if (os.contains("linux")) downloadUrl = YTDLP_RELEASE_URL + "yt-dlp_linux";
 
 			statusUpdater.accept("Downloading yt-dlp...");
+			MediaScreenLogger.log("Downloading yt-dlp...");
 
 			try {
 				URL url = new URI(downloadUrl).toURL();
@@ -86,6 +87,7 @@ public class YtDlpManager {
 							double speed = (totalRead / 1024.0) / ((System.currentTimeMillis() - startTime) / 1000.0);
 							DecimalFormat df = new DecimalFormat("#.#");
 							statusUpdater.accept("Downloading yt-dlp: " + df.format(mb) + "/" + df.format(totalMB) + " MB (" + df.format(speed) + " KB/s) " + pct + "%");
+						MediaScreenLogger.log("Downloading yt-dlp: " + df.format(mb) + "/" + df.format(totalMB) + " MB (" + df.format(speed) + " KB/s) " + pct + "%");
 						}
 					}
 				}
@@ -103,6 +105,7 @@ public class YtDlpManager {
 				}
 
 				statusUpdater.accept("yt-dlp ready");
+				MediaScreenLogger.log("yt-dlp ready");
 			} catch (Exception e) {
 				throw new RuntimeException("Failed to download yt-dlp: " + e.getMessage(), e);
 			} finally {
@@ -129,11 +132,11 @@ public class YtDlpManager {
 					try {
 						ProcessBuilder infoPb = new ProcessBuilder(
 							ytDlp.toString(),
-							"--dump-json",
-							"--format", "bestvideo[height<=480][ext=mp4]+bestaudio/best[height<=480]/best",
+							"--no-playlist",
+							"--print", "%(url)s,%(width)s,%(height)s",
+							"--format", "bestvideo[height<=480][ext=mp4]+bestaudio/best[height<=480]/best[height<=480]",
 							"--no-warnings",
 							"--extractor-args", "youtube:player_client=android",
-							"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
 							youtubeUrl
 						);
 						infoPb.redirectError(ProcessBuilder.Redirect.PIPE);
@@ -146,16 +149,16 @@ public class YtDlpManager {
 					}
 				}
 
-				String jsonOutput;
+				String output;
 				try (BufferedReader reader = new BufferedReader(new InputStreamReader(infoProcess.getInputStream()))) {
 					StringBuilder sb = new StringBuilder();
 					String line;
 					while ((line = reader.readLine()) != null) sb.append(line);
-					jsonOutput = sb.toString().trim();
+					output = sb.toString().trim();
 				}
 
 				int exitCode = infoProcess.waitFor();
-				if (exitCode != 0 || jsonOutput.isEmpty()) {
+				if (exitCode != 0 || output.isEmpty()) {
 					String err;
 					try (BufferedReader reader = new BufferedReader(new InputStreamReader(infoProcess.getErrorStream()))) {
 						StringBuilder sb = new StringBuilder();
@@ -169,18 +172,10 @@ public class YtDlpManager {
 					throw new RuntimeException("yt-dlp failed: " + err);
 				}
 
-				String directUrl = parseJsonField(jsonOutput, "url");
-				String widthStr = parseJsonField(jsonOutput, "width");
-				String heightStr = parseJsonField(jsonOutput, "height");
-
-				int width = 1280;
-				int height = 720;
-				if (!widthStr.isEmpty() && !heightStr.isEmpty()) {
-					try {
-						width = Integer.parseInt(widthStr);
-						height = Integer.parseInt(heightStr);
-					} catch (NumberFormatException ignored) {}
-				}
+				String[] parts = output.split(",");
+				String directUrl = parts[0].trim();
+				int width = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1280;
+				int height = parts.length > 2 ? Integer.parseInt(parts[2].trim()) : 720;
 
 				return new StreamInfo(directUrl, width, height);
 			} catch (Exception e) {
@@ -193,17 +188,6 @@ public class YtDlpManager {
 			onError.accept(e.getMessage());
 			return null;
 		});
-	}
-
-	private static String parseJsonField(String json, String field) {
-		String key = "\"" + field + "\":";
-		int idx = json.indexOf(key);
-		if (idx == -1) return "";
-		idx += key.length();
-		while (idx < json.length() && (json.charAt(idx) == ' ' || json.charAt(idx) == '"')) idx++;
-		int end = idx;
-		while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}' && json.charAt(end) != '"') end++;
-		return json.substring(idx, end).trim();
 	}
 
 	public static class StreamInfo {

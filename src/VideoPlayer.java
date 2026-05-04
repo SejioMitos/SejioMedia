@@ -25,8 +25,10 @@ public class VideoPlayer {
 	private volatile int videoHeight;
 
 	private Process videoProcess;
-	private Process audioProcess;
 	private SourceDataLine audioLine;
+	private Thread audioThread;
+
+	private byte[][] frameBuffers;
 
 	private final CopyOnWriteArrayList<String> debugLog = new CopyOnWriteArrayList<>();
 
@@ -47,12 +49,15 @@ public class VideoPlayer {
 
 	public void stop() {
 		running.set(false);
-		if (videoProcess != null) videoProcess.destroy();
-		if (audioProcess != null) audioProcess.destroy();
+		if (videoProcess != null) videoProcess.destroyForcibly();
 		if (decodeThread != null) {
 			try { decodeThread.join(2000); } catch (InterruptedException e) { decodeThread.interrupt(); }
 		}
+		if (audioThread != null) {
+			try { audioThread.join(1000); } catch (InterruptedException ignored) {}
+		}
 		if (audioLine != null) { audioLine.stop(); audioLine.close(); audioLine = null; }
+		frameBuffers = null;
 
 		MinecraftClient.getInstance().execute(() -> {
 			if (texture != null) {
@@ -62,8 +67,11 @@ public class VideoPlayer {
 		});
 	}
 
+	public boolean isRunning() { return running.get(); }
+
 	private void addLog(String line) {
 		debugLog.add(line);
+		MediaScreenLogger.log(line);
 		if (debugLog.size() > 100) {
 			debugLog.remove(0);
 		}
@@ -79,28 +87,47 @@ public class VideoPlayer {
 			if (ffmpeg == null) throw new IOException("FFmpeg not found");
 
 			int frameSize = videoWidth * videoHeight * 3;
+			long startTimeNs = System.nanoTime();
+			long frameIndex = 0;
+			long frameRateNs = 1_000_000_000L / 24;
 
-			ProcessBuilder videoPb = new ProcessBuilder(
+			ProcessBuilder pb = new ProcessBuilder(
 				ffmpeg,
 				"-i", streamUrl,
+				"-loglevel", "quiet",
+				"-map", "0:v:0",
+				"-vf", "format=rgb24",
 				"-f", "rawvideo",
 				"-pix_fmt", "rgb24",
 				"-s", videoWidth + "x" + videoHeight,
 				"-fps_mode", "cfr",
 				"-r", "24",
-				"pipe:1"
+				"pipe:1",
+				"-map", "0:a:0",
+				"-f", "s16le",
+				"-acodec", "pcm_s16le",
+				"-ar", "44100",
+				"-ac", "2",
+				"pipe:2"
 			);
-			videoPb.redirectError(ProcessBuilder.Redirect.PIPE);
-			videoPb.redirectOutput(ProcessBuilder.Redirect.PIPE);
+			pb.redirectError(ProcessBuilder.Redirect.PIPE);
+			pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
 
-			videoProcess = videoPb.start();
+			videoProcess = pb.start();
 
-			new Thread(this::captureStderr, "MediaScreen-DebugLog").start();
-			new Thread(() -> initAudio(ffmpeg), "MediaScreen-AudioInit").start();
+			AudioFormat format = new AudioFormat(44100, 16, 2, true, false);
+			DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+			if (javax.sound.sampled.AudioSystem.isLineSupported(info)) {
+				audioLine = (SourceDataLine) javax.sound.sampled.AudioSystem.getLine(info);
+				audioLine.open(format, 44100 * 2 * 2);
+				audioLine.start();
+				audioThread = new Thread(this::readAudio, "MediaScreen-Audio");
+				audioThread.start();
+			}
 
 			boolean firstFrame = true;
 			int writeIdx = 0;
-			byte[][] frameBuffers = new byte[2][frameSize];
+			frameBuffers = new byte[2][frameSize];
 			try (InputStream in = videoProcess.getInputStream()) {
 				while (running.get()) {
 					byte[] curBuf = frameBuffers[writeIdx];
@@ -125,6 +152,15 @@ public class VideoPlayer {
 								}
 							}
 						});
+
+						long expectedTimeNs = startTimeNs + (frameIndex * frameRateNs);
+						long nowNs = System.nanoTime();
+						long sleepNs = expectedTimeNs - nowNs;
+						if (sleepNs > 0) {
+							try { Thread.sleep(sleepNs / 1_000_000, (int)(sleepNs % 1_000_000)); }
+							catch (InterruptedException ignored) {}
+						}
+						frameIndex++;
 					}
 					if (eof) break;
 				}
@@ -134,54 +170,22 @@ public class VideoPlayer {
 			if (errorCallback != null && running.get()) errorCallback.accept("Error: " + e.getMessage());
 		} finally {
 			running.set(false);
-			if (videoProcess != null) videoProcess.destroy();
-			if (audioProcess != null) audioProcess.destroy();
+			if (videoProcess != null) videoProcess.destroyForcibly();
 			if (audioLine != null) { audioLine.stop(); audioLine.close(); audioLine = null; }
+			frameBuffers = null;
 		}
 	}
 
-	private void captureStderr() {
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(videoProcess.getErrorStream()))) {
-			String line;
-			while (running.get() && (line = reader.readLine()) != null) {
-				final String logLine = line;
-				MinecraftClient.getInstance().execute(() -> addLog(logLine));
+	private void readAudio() {
+		try (InputStream in = videoProcess.getErrorStream()) {
+			byte[] buf = new byte[8192];
+			int read;
+			while (running.get() && (read = in.read(buf)) != -1) {
+				if (audioLine != null) {
+					audioLine.write(buf, 0, read);
+				}
 			}
-		} catch (IOException e) {
-			addLog("stderr reader closed");
-		}
-	}
-
-	private void initAudio(String ffmpeg) {
-		try {
-			ProcessBuilder audioPb = new ProcessBuilder(
-				ffmpeg,
-				"-i", streamUrl,
-				"-f", "s16le",
-				"-acodec", "pcm_s16le",
-				"-ar", "44100",
-				"-ac", "2",
-				"pipe:1"
-			);
-			audioPb.redirectError(ProcessBuilder.Redirect.DISCARD);
-			audioPb.redirectOutput(ProcessBuilder.Redirect.PIPE);
-			audioProcess = audioPb.start();
-
-			AudioFormat format = new AudioFormat(44100, 16, 2, true, false);
-			DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
-			if (javax.sound.sampled.AudioSystem.isLineSupported(info)) {
-				audioLine = (SourceDataLine) javax.sound.sampled.AudioSystem.getLine(info);
-				audioLine.open(format);
-				audioLine.start();
-				new Thread(() -> {
-					try (InputStream in = audioProcess.getInputStream()) {
-						byte[] buf = new byte[8192];
-						int read;
-						while (running.get() && (read = in.read(buf)) != -1) audioLine.write(buf, 0, read);
-					} catch (Exception ignored) {}
-				}, "MediaScreen-Audio").start();
-			}
-		} catch (Exception e) { audioLine = null; }
+		} catch (IOException ignored) {}
 	}
 
 	public VideoTexture getTexture() { return texture; }

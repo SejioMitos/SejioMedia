@@ -18,8 +18,9 @@ public class MediaScreenScreen extends Screen {
 
 	private static final java.util.Map<net.minecraft.util.math.BlockPos, String> URL_CACHE = new java.util.HashMap<>();
 
-	private static final int PANEL_W = 500;
-	private static final int PANEL_H = 340;
+	private int PANEL_W;
+	private int PANEL_H;
+	private int pad;
 
 	private final MediaScreenBlockEntity blockEntity;
 
@@ -38,14 +39,24 @@ public class MediaScreenScreen extends Screen {
 		this.blockEntity = blockEntity;
 	}
 
+	private void computeLayout() {
+		float scale = Math.min(1.0f, Math.min((float) width / 1920.0f, (float) height / 1080.0f));
+		scale = Math.max(0.5f, scale);
+
+		PANEL_W = (int) (560 * scale);
+		PANEL_H = (int) (420 * scale);
+		pad = (int) (14 * scale);
+	}
+
 	@Override
 	protected void init() {
+		computeLayout();
 		int panelX = (width - PANEL_W) / 2;
 		int panelY = (height - PANEL_H) / 2;
-		int pad = 14;
 		int innerW = PANEL_W - pad * 2;
 
-		urlField = new TextFieldWidget(textRenderer, panelX + pad, panelY + pad, innerW, 20, Text.literal("URL HERE"));
+		int fieldH = Math.max(16, (int) (20 * (PANEL_W / 500.0f)));
+		urlField = new TextFieldWidget(textRenderer, panelX + pad, panelY + pad, innerW, fieldH, Text.literal("URL HERE"));
 		urlField.setMaxLength(1024);
 		String cached = URL_CACHE.get(blockEntity.getPos());
 		String saved = cached != null ? cached : blockEntity.getYoutubeUrl();
@@ -54,13 +65,13 @@ public class MediaScreenScreen extends Screen {
 		urlField.setFocused(true);
 
 		previewX = panelX + pad;
-		previewY = panelY + pad + 26;
+		previewY = panelY + pad + fieldH + 6;
 		previewW = innerW;
-		previewH = 170;
+		previewH = (int) (200 * (PANEL_H / 420.0f));
 
 		int bottomY = previewY + previewH + 8;
 		int bottomH = panelY + PANEL_H - pad - bottomY;
-		int btnColW = 80;
+		int btnColW = (int) (80 * (PANEL_W / 500.0f));
 		int btnGap = 8;
 		int btnX = panelX + PANEL_W - pad - btnColW;
 		logX = panelX + pad;
@@ -71,11 +82,12 @@ public class MediaScreenScreen extends Screen {
 		int btnTotalH = 44;
 		int btnOffsetY = (bottomH - btnTotalH) / 2;
 		int btnY = bottomY + btnOffsetY;
+		int btnH = Math.max(16, (int) (20 * (PANEL_H / 340.0f)));
 
 		playButton = ButtonWidget.builder(Text.literal("PLAY"), btn -> onPlay())
-			.dimensions(btnX, btnY, btnColW, 20).build();
+			.dimensions(btnX, btnY, btnColW, btnH).build();
 		stopButton = ButtonWidget.builder(Text.literal("STOP"), btn -> onStop())
-			.dimensions(btnX, btnY + 24, btnColW, 20).build();
+			.dimensions(btnX, btnY + btnH + 4, btnColW, btnH).build();
 
 		addDrawableChild(urlField);
 		addDrawableChild(playButton);
@@ -93,11 +105,14 @@ public class MediaScreenScreen extends Screen {
 		String path = FFmpegManager.getFFmpegPath();
 		if (path == null) {
 			debugLog.add("FFMPEG NOT FOUND - STARTING DOWNLOAD");
+			MediaScreenLogger.log("FFMPEG NOT FOUND - STARTING DOWNLOAD");
 			if (!FFmpegManager.isInstalling()) {
 				FFmpegManager.installFFmpeg(status -> {
 					debugLog.add(status);
+					MediaScreenLogger.log(status);
 				}).exceptionally(e -> {
 					debugLog.add("FFmpeg install failed: " + e.getMessage());
+					MediaScreenLogger.log("FFmpeg install failed: " + e.getMessage());
 					return null;
 				});
 			}
@@ -106,7 +121,7 @@ public class MediaScreenScreen extends Screen {
 
 	private void onPlay() {
 		String url = urlField.getText().trim();
-		if (url.isEmpty()) { debugLog.add("Error: No URL"); return; }
+		if (url.isEmpty()) { debugLog.add("Error: No URL"); MediaScreenLogger.log("Error: No URL"); return; }
 
 		blockEntity.setYoutubeUrl(url);
 		URL_CACHE.put(blockEntity.getPos(), url);
@@ -115,13 +130,18 @@ public class MediaScreenScreen extends Screen {
 
 		if (YtDlpManager.isDownloading() || FFmpegManager.isInstalling()) {
 			debugLog.add("Downloads in progress, please wait...");
+			MediaScreenLogger.log("Downloads in progress, please wait...");
 			playButton.active = true;
 			return;
 		}
 
 		if (!YtDlpManager.isDownloaded()) {
 			debugLog.add("Downloading yt-dlp first...");
-			YtDlpManager.downloadYtDlp(s -> debugLog.add(s))
+			MediaScreenLogger.log("Downloading yt-dlp first...");
+			YtDlpManager.downloadYtDlp(s -> {
+				debugLog.add(s);
+				MediaScreenLogger.log(s);
+			})
 				.thenRun(() -> MinecraftClient.getInstance().execute(() -> {
 					if (!FFmpegManager.isInstalled()) {
 						startFFmpegInstall(url);
@@ -142,13 +162,16 @@ public class MediaScreenScreen extends Screen {
 
 	private void startFFmpegInstall(String url) {
 		debugLog.add("Installing FFmpeg (first time)...");
+		MediaScreenLogger.log("Installing FFmpeg (first time)...");
 		FFmpegManager.installFFmpeg(status -> {
 			debugLog.add(status);
+			MediaScreenLogger.log(status);
 			if (status.equals("FFmpeg ready")) {
 				startPlayback(url);
 			}
 		}).exceptionally(e -> {
 			debugLog.add("FFmpeg install failed: " + e.getMessage());
+			MediaScreenLogger.log("FFmpeg install failed: " + e.getMessage());
 			playButton.active = true;
 			return null;
 		});
@@ -156,25 +179,33 @@ public class MediaScreenScreen extends Screen {
 
 	private void startPlayback(String url) {
 		debugLog.add("Resolving URL...");
+		MediaScreenLogger.log("Resolving URL...");
 		YtDlpManager.resolveStreamUrl(url,
-			s -> debugLog.add(s),
+			s -> {
+				debugLog.add(s);
+				MediaScreenLogger.log(s);
+			},
 			info -> {
 				MinecraftClient.getInstance().execute(() -> {
 					debugLog.add("Starting playback...");
+					MediaScreenLogger.log("Starting playback...");
 					VideoPlayer player = new VideoPlayer(info.url, info.width, info.height, err -> {
 						MinecraftClient.getInstance().execute(() -> {
 							debugLog.add("Error: " + err);
+							MediaScreenLogger.log("Error: " + err);
 							playButton.active = true;
 						});
 					});
 					VideoManager.startPlayer(blockEntity.getPos(), player);
 					debugLog.add("Playing");
+					MediaScreenLogger.log("Playing");
 					blockEntity.setPlaying(true);
 				});
 			},
 			error -> {
 				MinecraftClient.getInstance().execute(() -> {
 					debugLog.add("Error: " + error);
+					MediaScreenLogger.log("Error: " + error);
 					blockEntity.setPlaying(false);
 					playButton.active = true;
 				});
@@ -187,14 +218,21 @@ public class MediaScreenScreen extends Screen {
 		blockEntity.setPlaying(false);
 		playButton.active = true;
 		debugLog.add("Stopped");
+		MediaScreenLogger.log("Stopped");
 	}
 
 	@Override
 	public boolean shouldPause() { return false; }
 
 	@Override
+	public void removed() {
+		super.removed();
+		debugLog.clear();
+	}
+
+	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-		int lineH = textRenderer.fontHeight + 2;
+		int lineH = textRenderer.fontHeight + 4;
 		int maxLines = Math.max(1, logH / lineH);
 		int total = debugLog.size();
 		int maxScroll = Math.max(0, total - maxLines);
@@ -210,6 +248,7 @@ public class MediaScreenScreen extends Screen {
 	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
 		RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
 
+		computeLayout();
 		int panelX = (width - PANEL_W) / 2;
 		int panelY = (height - PANEL_H) / 2;
 
@@ -245,7 +284,7 @@ public class MediaScreenScreen extends Screen {
 
 		context.enableScissor(logX, logY, logX + logW, logY + logH);
 
-		int lineH = textRenderer.fontHeight + 2;
+		int lineH = textRenderer.fontHeight + 4;
 		int maxLines = Math.max(1, logH / lineH);
 		int total = debugLog.size();
 		int maxScroll = Math.max(0, total - maxLines);
@@ -289,6 +328,7 @@ public class MediaScreenScreen extends Screen {
 			for (String line : player.getDebugLog()) {
 				if (!debugLog.contains(line)) {
 					debugLog.add(line);
+					MediaScreenLogger.log(line);
 				}
 			}
 		}

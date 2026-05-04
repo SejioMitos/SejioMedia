@@ -29,4 +29,8 @@ public class VideoManager {
 	public static java.util.Collection<VideoPlayer> getAllPlayers() {
 		return activePlayers.values();
 	}
+
+	public static void cleanup() {
+		activePlayers.entrySet().removeIf(e -> !e.getValue().isRunning());
+	}
 }

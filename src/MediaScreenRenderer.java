@@ -36,9 +36,9 @@ public class MediaScreenRenderer implements BlockEntityRenderer<MediaScreenBlock
 		matrices.translate(0.5f, 0.5f, 0.5f);
 
 		float yaw = switch (facing) {
-			case SOUTH -> 180f;
-			case WEST -> 90f;
-			case EAST -> -90f;
+			case NORTH -> 180f;
+			case WEST -> -90f;
+			case EAST -> 90f;
 			default -> 0f;
 		};
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yaw));

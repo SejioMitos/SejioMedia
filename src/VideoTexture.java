@@ -5,131 +5,91 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
 
-import java.lang.reflect.Field;
-import java.nio.IntBuffer;
-
 public class VideoTexture {
 
-	private NativeImageBackedTexture nativeTexture;
-	private Identifier identifier;
-	private int width;
-	private int height;
+    private NativeImageBackedTexture nativeTexture;
+    private Identifier identifier;
+    private int registeredWidth;
+    private int registeredHeight;
 
-	private volatile byte[] pendingFrame;
-	private volatile boolean needsUpload;
+    private volatile byte[] pendingFrame;
+    private volatile int pendingWidth;
+    private volatile int pendingHeight;
+    private volatile boolean needsUpload;
 
-	private IntBuffer directIntBuf;
-	private boolean bulkWriteSupported;
+    public int getWidth()  { return registeredWidth; }
+    public int getHeight() { return registeredHeight; }
 
-	public int getWidth() { return width; }
-	public int getHeight() { return height; }
+    public void uploadFrame(byte[] rgbBuffer, int width, int height, boolean isFirst) {
+        pendingFrame  = rgbBuffer;
+        pendingWidth  = width;
+        pendingHeight = height;
+        needsUpload   = true;
+    }
 
-	private void ensureTexture(int w, int h) {
-		if (nativeTexture != null && width == w && height == h) return;
-		closeInternal();
-		width = w;
-		height = h;
-		NativeImage image = new NativeImage(NativeImage.Format.RGBA, w, h, true);
-		nativeTexture = new NativeImageBackedTexture(image);
+    public void updateFrame(byte[] rgbBuffer, int width, int height) {
+        uploadFrame(rgbBuffer, width, height, false);
+    }
 
-		bulkWriteSupported = initBulkWrite(image);
-	}
+    public void tickUpload() {
+        if (!needsUpload) return;
+        byte[] frame = pendingFrame;
+        if (frame == null) return;
 
-	private boolean initBulkWrite(NativeImage image) {
-		for (String name : new String[]{"colorInts", "intBuffer", "buffer", "data", "pixels", "colorData", "field_24975", "field_24976"}) {
-			try {
-				Field f = NativeImage.class.getDeclaredField(name);
-				f.setAccessible(true);
-				Object val = f.get(image);
-				if (val instanceof IntBuffer ib) {
-					directIntBuf = ib;
-					return true;
-				}
-				if (val instanceof int[] arr) {
-					directIntBuf = java.nio.IntBuffer.wrap(arr);
-					return true;
-				}
-			} catch (Exception ignored) {}
-		}
-		return false;
-	}
+        int w = pendingWidth;
+        int h = pendingHeight;
+        needsUpload  = false;
+        pendingFrame = null;
 
-	public void uploadFrame(byte[] rgbBuffer, int width, int height, boolean isFirst) {
-		pendingFrame = rgbBuffer;
-		needsUpload = true;
-		if (isFirst) {
-			this.width = width;
-			this.height = height;
-		}
-	}
+        if (nativeTexture == null || registeredWidth != w || registeredHeight != h) {
+            closeInternal();
+            registeredWidth  = w;
+            registeredHeight = h;
 
-	public void updateFrame(byte[] rgbBuffer, int width, int height) {
-		uploadFrame(rgbBuffer, width, height, false);
-	}
+            NativeImage image = new NativeImage(NativeImage.Format.RGBA, w, h, false);
+            nativeTexture = new NativeImageBackedTexture(image);
 
-	public void tickUpload() {
-		if (!needsUpload) return;
+            String safeName = "video_" + w + "x" + h + "_" + System.nanoTime();
+            identifier = MinecraftClient.getInstance()
+                    .getTextureManager()
+                    .registerDynamicTexture(safeName, nativeTexture);
+        }
 
-		byte[] frame = pendingFrame;
-		if (frame == null) return;
+        NativeImage image = nativeTexture.getImage();
+        if (image == null) return;
 
-		int w = width;
-		int h = height;
+        int idx = 0;
+        for (int y = h - 1; y >= 0; y--) {
+            for (int x = 0; x < w; x++) {
+                int r = frame[idx]     & 0xFF;
+                int g = frame[idx + 1] & 0xFF;
+                int b = frame[idx + 2] & 0xFF;
+                idx += 3;
+                image.setColor(x, y, (0xFF << 24) | (b << 16) | (g << 8) | r);
+            }
+        }
 
-		needsUpload = false;
-		pendingFrame = null;
+        nativeTexture.upload();
+    }
 
-		ensureTexture(w, h);
+    public Identifier getOrRegisterIdentifier(String ignoredName) {
+        return identifier;
+    }
 
-		NativeImage image = nativeTexture.getImage();
+    private void closeInternal() {
+        if (identifier != null) {
+            MinecraftClient.getInstance().getTextureManager().destroyTexture(identifier);
+            identifier = null;
+        }
+        if (nativeTexture != null) {
+            nativeTexture.close();
+            nativeTexture = null;
+        }
+        registeredWidth  = 0;
+        registeredHeight = 0;
+    }
 
-		if (bulkWriteSupported && directIntBuf != null) {
-			directIntBuf.clear();
-			int pixelCount = w * h;
-			int srcIdx = 0;
-			for (int i = 0; i < pixelCount; i++) {
-				int r = frame[srcIdx] & 0xFF;
-				int g = frame[srcIdx + 1] & 0xFF;
-				int b = frame[srcIdx + 2] & 0xFF;
-				srcIdx += 3;
-				directIntBuf.put((0xFF << 24) | (r << 16) | (g << 8) | b);
-			}
-		} else {
-			int idx = 0;
-			for (int y = h - 1; y >= 0; y--) {
-				for (int x = 0; x < w; x++) {
-					int r = frame[idx] & 0xFF;
-					int g = frame[idx + 1] & 0xFF;
-					int b = frame[idx + 2] & 0xFF;
-					idx += 3;
-					image.setColor(x, y, 0xFF000000 | (r << 16) | (g << 8) | b);
-				}
-			}
-		}
-
-		nativeTexture.upload();
-	}
-
-	public Identifier getOrRegisterIdentifier(String name) {
-		if (nativeTexture == null) return null;
-		if (identifier == null) {
-			String safeName = name.replaceAll("[^a-z0-9/._-]", "_");
-			identifier = MinecraftClient.getInstance().getTextureManager().registerDynamicTexture(safeName, nativeTexture);
-		}
-		return identifier;
-	}
-
-	private void closeInternal() {
-		if (nativeTexture != null) {
-			nativeTexture.close();
-			nativeTexture = null;
-		}
-		identifier = null;
-		directIntBuf = null;
-		bulkWriteSupported = false;
-	}
-
-	public void close() {
-		closeInternal();
-	}
+    public void close() {
+        closeInternal();
+    }
 }

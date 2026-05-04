@@ -63,6 +63,7 @@ public class FFmpegManager {
 			String os = System.getProperty("os.name").toLowerCase();
 			if (!os.contains("windows")) {
 				statusUpdater.accept("FFmpeg install skipped (Mac/Linux please use APT/Brew)");
+				MediaScreenLogger.log("FFmpeg install skipped (Mac/Linux please use APT/Brew)");
 				return;
 			}
 
@@ -83,6 +84,7 @@ public class FFmpegManager {
 				int fileSize = connection.getContentLength();
 
 				statusUpdater.accept("Downloading FFmpeg...");
+				MediaScreenLogger.log("Downloading FFmpeg...");
 
 				try (ReadableByteChannel rbc = Channels.newChannel(connection.getInputStream());
 					 FileOutputStream fos = new FileOutputStream(zipPath.toFile())) {
@@ -101,11 +103,13 @@ public class FFmpegManager {
 							double speed = (totalRead / 1024.0) / ((System.currentTimeMillis() - startTime) / 1000.0);
 							DecimalFormat df = new DecimalFormat("#.#");
 							statusUpdater.accept("Downloading FFmpeg: " + df.format(mb) + "/" + df.format(totalMB) + " MB (" + df.format(speed) + " KB/s) " + pct + "%");
+					MediaScreenLogger.log("Downloading FFmpeg: " + df.format(mb) + "/" + df.format(totalMB) + " MB (" + df.format(speed) + " KB/s) " + pct + "%");
 						}
 					}
 				}
 
 				statusUpdater.accept("Extracting FFmpeg...");
+				MediaScreenLogger.log("Extracting FFmpeg...");
 
 				try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipPath))) {
 					ZipEntry entry;
@@ -126,6 +130,7 @@ public class FFmpegManager {
 							fileCount++;
 							if (fileCount % 10 == 0) {
 								statusUpdater.accept("Extracting FFmpeg... (" + fileCount + " files)");
+								MediaScreenLogger.log("Extracting FFmpeg... (" + fileCount + " files)");
 							}
 						}
 						zis.closeEntry();
@@ -140,6 +145,7 @@ public class FFmpegManager {
 				}
 
 				statusUpdater.accept("FFmpeg ready");
+				MediaScreenLogger.log("FFmpeg ready");
 			} catch (Exception e) {
 				throw new RuntimeException("Failed to install FFmpeg: " + e.getMessage(), e);
 			} finally {
