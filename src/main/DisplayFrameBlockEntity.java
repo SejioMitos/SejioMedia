@@ -11,14 +11,14 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import org.jetbrains.annotations.Nullable;
 
-public class MediaScreenBlockEntity extends BlockEntity {
+public class DisplayFrameBlockEntity extends BlockEntity {
 
 	private String youtubeUrl = "";
 	private boolean isPlaying = false;
 	private Direction facing = Direction.NORTH;
 
-	public MediaScreenBlockEntity(BlockPos pos, BlockState state) {
-		super(null, pos, state); // MEDIA_SCREEN commented out
+	public DisplayFrameBlockEntity(BlockPos pos, BlockState state) {
+		super(ModBlockEntities.DISPLAY_FRAME, pos, state);
 	}
 
 	public String getYoutubeUrl() { return youtubeUrl; }
@@ -36,7 +36,7 @@ public class MediaScreenBlockEntity extends BlockEntity {
 		markDirty();
 		if (world != null) {
 			BlockState state = world.getBlockState(pos);
-			world.setBlockState(pos, state.with(MediaScreenBlock.PLAYING, playing));
+			world.setBlockState(pos, state.with(DisplayFrameBlock.PLAYING, playing));
 		}
 	}
 
