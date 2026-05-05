@@ -1,11 +1,11 @@
 package com.mediascreen.client;
 
 import com.mediascreen.block.MediaScreenBlockEntity;
+import com.mediascreen.block.DisplayFrameBlockEntity;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.text.Text;
@@ -17,208 +17,272 @@ import java.util.List;
 public class MediaScreenScreen extends Screen {
 
 	private static final java.util.Map<net.minecraft.util.math.BlockPos, String> URL_CACHE = new java.util.HashMap<>();
+	private static int targetFps = 36;
+	private static int fpsCap = 60;
 
-	private int PANEL_W;
-	private int PANEL_H;
-	private int pad;
+	private int panelW = 760;
+	private int panelH = 430;
+	private int pad = 20;
+	private int topH = 38;
+	private int previewH = 214;
+	private int logH = 52;
 
-	private final MediaScreenBlockEntity blockEntity;
+	private final net.minecraft.block.entity.BlockEntity blockEntity;
 
 	private TextFieldWidget urlField;
-	private ButtonWidget playButton;
-	private ButtonWidget stopButton;
 
-	private int previewX, previewY, previewW, previewH;
-	private int logX, logY, logW, logH;
+	private int panelX, panelY;
+	private int urlX, urlY, urlW, urlH;
+	private int playX, playY, pauseX, pauseY;
+	private int searchX, searchY, searchW, searchH;
+	private int previewX, previewY, previewW;
+	private int logX, logY, logW;
+	private int targetSliderX, targetSliderY, capSliderX, capSliderY, sliderW;
+	private int activeSlider = 0;
+
+	private VideoPlayer currentPlayer;
 
 	private final List<String> debugLog = new ArrayList<>();
 	private int logScroll = 0;
+	private long playbackRequestId = 0;
+	private boolean playbackStarting = false;
 
 	public MediaScreenScreen(MediaScreenBlockEntity blockEntity) {
 		super(Text.literal("MediaScreen"));
 		this.blockEntity = blockEntity;
 	}
 
-	private void computeLayout() {
-		float scale = Math.min(1.0f, Math.min((float) width / 1920.0f, (float) height / 1080.0f));
-		scale = Math.max(0.5f, scale);
-
-		PANEL_W = (int) (560 * scale);
-		PANEL_H = (int) (420 * scale);
-		pad = (int) (14 * scale);
+	public MediaScreenScreen(DisplayFrameBlockEntity blockEntity) {
+		super(Text.literal("DisplayFrame"));
+		this.blockEntity = blockEntity;
 	}
 
 	@Override
 	protected void init() {
-		computeLayout();
-		int panelX = (width - PANEL_W) / 2;
-		int panelY = (height - PANEL_H) / 2;
-		int innerW = PANEL_W - pad * 2;
+		float scale = Math.min(1.0f, Math.min(width / 790.0f, height / 445.0f));
+		scale = Math.max(0.65f, scale);
+		panelW = Math.min(width - 8, (int) (790 * scale));
+		panelH = Math.min(height - 8, (int) (445 * scale));
+		pad = Math.max(12, (int) (20 * scale));
+		topH = Math.max(30, (int) (38 * scale));
+		previewH = Math.max(120, (int) (214 * scale));
+		logH = Math.max(44, (int) (52 * scale));
 
-		int fieldH = Math.max(16, (int) (20 * (PANEL_W / 500.0f)));
-		urlField = new TextFieldWidget(textRenderer, panelX + pad, panelY + pad, innerW, fieldH, Text.literal("URL HERE"));
+		layoutWidgets();
+
+		urlField = new TextFieldWidget(textRenderer, urlX + 42, urlY + (urlH - 12) / 2, urlW - 78, 16, Text.literal("URL"));
 		urlField.setMaxLength(1024);
-		String cached = URL_CACHE.get(blockEntity.getPos());
-		String saved = cached != null ? cached : blockEntity.getYoutubeUrl();
+		urlField.setDrawsBackground(false);
+		String cached = URL_CACHE.get(getBlockEntity().getPos());
+		String saved = cached != null ? cached : getYoutubeUrl();
 		urlField.setText(saved);
-		urlField.setChangedListener(url -> URL_CACHE.put(blockEntity.getPos(), url));
+		urlField.setChangedListener(url -> URL_CACHE.put(getBlockEntity().getPos(), url));
 		urlField.setFocused(true);
 
-		previewX = panelX + pad;
-		previewY = panelY + pad + fieldH + 6;
-		previewW = innerW;
-		previewH = (int) (200 * (PANEL_H / 420.0f));
-
-		int bottomY = previewY + previewH + 8;
-		int bottomH = panelY + PANEL_H - pad - bottomY;
-		int btnColW = (int) (80 * (PANEL_W / 500.0f));
-		int btnGap = 8;
-		int btnX = panelX + PANEL_W - pad - btnColW;
-		logX = panelX + pad;
-		logW = btnX - logX - btnGap;
-		logY = bottomY;
-		logH = bottomH;
-
-		int btnTotalH = 44;
-		int btnOffsetY = (bottomH - btnTotalH) / 2;
-		int btnY = bottomY + btnOffsetY;
-		int btnH = Math.max(16, (int) (20 * (PANEL_H / 340.0f)));
-
-		playButton = ButtonWidget.builder(Text.literal("PLAY"), btn -> onPlay())
-			.dimensions(btnX, btnY, btnColW, btnH).build();
-		stopButton = ButtonWidget.builder(Text.literal("STOP"), btn -> onStop())
-			.dimensions(btnX, btnY + btnH + 4, btnColW, btnH).build();
-
 		addDrawableChild(urlField);
-		addDrawableChild(playButton);
-		addDrawableChild(stopButton);
 		addSelectableChild(urlField);
 
-		if (blockEntity.isPlaying() && VideoManager.getPlayer(blockEntity.getPos()) != null) {
-			playButton.active = false;
-		}
-
 		checkFFmpeg();
+	}
+
+	private void layoutWidgets() {
+		panelX = (width - panelW) / 2;
+		panelY = (height - panelH) / 2;
+
+		urlX = panelX + pad;
+		urlY = panelY + 10;
+		urlW = Math.max(220, (int) (368 * (panelW / 790.0f)));
+		urlH = topH;
+
+		searchW = Math.max(96, (int) (114 * (panelW / 790.0f)));
+		searchH = topH;
+		searchX = panelX + panelW - pad - searchW;
+		searchY = urlY;
+
+		pauseX = searchX - 28;
+		playX = pauseX - 28;
+		playY = pauseY = urlY + (urlH - 16) / 2;
+
+		previewX = panelX + pad;
+		previewY = panelY + 67;
+		previewW = panelW - pad * 2;
+
+		logX = panelX + pad;
+		logW = Math.min((int) (421 * (panelW / 790.0f)), panelW - pad * 2);
+		logY = panelY + panelH - pad - logH;
+		sliderW = Math.max(150, panelW - pad * 3 - logW);
+		targetSliderX = logX + logW + pad;
+		targetSliderY = logY + 5;
+		capSliderX = targetSliderX;
+		capSliderY = targetSliderY + 24;
+
+		if (urlField != null) {
+			urlField.setX(urlX + 42);
+			urlField.setY(urlY + (urlH - 12) / 2);
+			urlField.setWidth(urlW - 78);
+			urlField.setHeight(16);
+		}
 	}
 
 	private void checkFFmpeg() {
 		String path = FFmpegManager.getFFmpegPath();
 		if (path == null) {
-			debugLog.add("FFMPEG NOT FOUND - STARTING DOWNLOAD");
-			MediaScreenLogger.log("FFMPEG NOT FOUND - STARTING DOWNLOAD");
+			log("FFMPEG NOT FOUND - STARTING DOWNLOAD");
 			if (!FFmpegManager.isInstalling()) {
 				FFmpegManager.installFFmpeg(status -> {
-					debugLog.add(status);
-					MediaScreenLogger.log(status);
+					log(status);
 				}).exceptionally(e -> {
-					debugLog.add("FFmpeg install failed: " + e.getMessage());
-					MediaScreenLogger.log("FFmpeg install failed: " + e.getMessage());
+					log("FFmpeg install failed: " + e.getMessage());
 					return null;
 				});
 			}
 		}
 	}
 
+	private void log(String msg) {
+		debugLog.add(msg);
+		MediaScreenLogger.log(msg);
+	}
+
 	private void onPlay() {
+		if (playbackStarting) {
+			log("Playback is already loading...");
+			return;
+		}
 		String url = urlField.getText().trim();
-		if (url.isEmpty()) { debugLog.add("Error: No URL"); MediaScreenLogger.log("Error: No URL"); return; }
+		if (url.isEmpty()) { log("Error: No URL"); return; }
+		playbackStarting = true;
+		long requestId = ++playbackRequestId;
 
-		blockEntity.setYoutubeUrl(url);
-		URL_CACHE.put(blockEntity.getPos(), url);
-		playButton.active = false;
-		VideoManager.stopPlayer(blockEntity.getPos());
+		// Check if it's a YouTube URL and normalize it
+		if (YouTubeUrlHandler.isYouTubeUrl(url)) {
+			String normalizedUrl = YouTubeUrlHandler.normalizeYouTubeUrl(url);
+			if (normalizedUrl != null) {
+				url = normalizedUrl;
+				log("YouTube video detected - converting to standard format");
+				urlField.setText(url);
+			}
+		}
 
-		if (YtDlpManager.isDownloading() || FFmpegManager.isInstalling()) {
-			debugLog.add("Downloads in progress, please wait...");
-			MediaScreenLogger.log("Downloads in progress, please wait...");
-			playButton.active = true;
+		final String finalUrl = url;
+		setYoutubeUrl(finalUrl);
+		URL_CACHE.put(getBlockEntity().getPos(), finalUrl);
+
+		VideoManager.stopPlayer(getBlockEntity().getPos());
+
+		if (YtDlpManager.isDownloading() || FFmpegManager.isInstalling() || VLCManager.isInstalling()) {
+			log("Downloads in progress, please wait...");
+			playbackStarting = false;
 			return;
 		}
 
 		if (!YtDlpManager.isDownloaded()) {
-			debugLog.add("Downloading yt-dlp first...");
-			MediaScreenLogger.log("Downloading yt-dlp first...");
-			YtDlpManager.downloadYtDlp(s -> {
-				debugLog.add(s);
-				MediaScreenLogger.log(s);
-			})
+			log("Downloading yt-dlp first...");
+			YtDlpManager.downloadYtDlp(s -> log(s))
 				.thenRun(() -> MinecraftClient.getInstance().execute(() -> {
+					if (requestId != playbackRequestId) return;
 					if (!FFmpegManager.isInstalled()) {
-						startFFmpegInstall(url);
+						startFFmpegInstall(finalUrl, requestId);
+					} else if (!VLCManager.isInstalled()) {
+						startVlcInstall(finalUrl, requestId);
 					} else {
-						startPlayback(url);
+						startPlayback(finalUrl, requestId);
 					}
-				}));
+				})).exceptionally(e -> {
+					log("yt-dlp download failed: " + e.getMessage());
+					playbackStarting = false;
+					return null;
+				});
 			return;
 		}
 
 		if (!FFmpegManager.isInstalled()) {
-			startFFmpegInstall(url);
+			startFFmpegInstall(finalUrl, requestId);
+			return;
+		}
+		if (!VLCManager.isInstalled()) {
+			startVlcInstall(finalUrl, requestId);
 			return;
 		}
 
-		startPlayback(url);
+		startPlayback(finalUrl, requestId);
 	}
 
-	private void startFFmpegInstall(String url) {
-		debugLog.add("Installing FFmpeg (first time)...");
-		MediaScreenLogger.log("Installing FFmpeg (first time)...");
+	private void startFFmpegInstall(String url, long requestId) {
+		log("Installing FFmpeg (first time)...");
 		FFmpegManager.installFFmpeg(status -> {
-			debugLog.add(status);
-			MediaScreenLogger.log(status);
+			log(status);
 			if (status.equals("FFmpeg ready")) {
-				startPlayback(url);
+				if (requestId != playbackRequestId) return;
+				if (!VLCManager.isInstalled()) {
+					startVlcInstall(url, requestId);
+				} else {
+					startPlayback(url, requestId);
+				}
 			}
 		}).exceptionally(e -> {
-			debugLog.add("FFmpeg install failed: " + e.getMessage());
-			MediaScreenLogger.log("FFmpeg install failed: " + e.getMessage());
-			playButton.active = true;
+			log("FFmpeg install failed: " + e.getMessage());
+			playbackStarting = false;
 			return null;
 		});
 	}
 
-	private void startPlayback(String url) {
-		debugLog.add("Resolving URL...");
-		MediaScreenLogger.log("Resolving URL...");
+	private void startVlcInstall(String url, long requestId) {
+		log("Installing VLC (first time)...");
+		VLCManager.installVlc(status -> {
+			log(status);
+			if (status.equals("VLC ready")) {
+				if (requestId != playbackRequestId) return;
+				startPlayback(url, requestId);
+			}
+		}).exceptionally(e -> {
+			log("VLC install failed: " + e.getMessage());
+			playbackStarting = false;
+			return null;
+		});
+	}
+
+	private void startPlayback(String url, long requestId) {
+		// Provide context-specific messaging
+		if (YouTubeUrlHandler.isYouTubeUrl(url)) {
+			String videoId = YouTubeUrlHandler.extractVideoId(url);
+			log("Processing YouTube video: " + videoId);
+		} else {
+			log("Resolving URL...");
+		}
+		
 		YtDlpManager.resolveStreamUrl(url,
-			s -> {
-				debugLog.add(s);
-				MediaScreenLogger.log(s);
-			},
+			s -> log(s),
 			info -> {
 				MinecraftClient.getInstance().execute(() -> {
-					debugLog.add("Starting playback...");
-					MediaScreenLogger.log("Starting playback...");
-					VideoPlayer player = new VideoPlayer(info.url, info.width, info.height, err -> {
-						MinecraftClient.getInstance().execute(() -> {
-							debugLog.add("Error: " + err);
-							MediaScreenLogger.log("Error: " + err);
-							playButton.active = true;
-						});
+					if (requestId != playbackRequestId) return;
+					log("Starting playback...");
+					VideoPlayer player = new VideoPlayer(info.url, info.width, info.height, getEffectiveFps(), err -> {
+						MinecraftClient.getInstance().execute(() -> log("Error: " + err));
 					});
-					VideoManager.startPlayer(blockEntity.getPos(), player);
-					debugLog.add("Playing");
-					MediaScreenLogger.log("Playing");
-					blockEntity.setPlaying(true);
+					VideoManager.startPlayer(getBlockEntity().getPos(), player);
+					log("Playing");
+					setPlaying(true);
+					playbackStarting = false;
 				});
 			},
 			error -> {
 				MinecraftClient.getInstance().execute(() -> {
-					debugLog.add("Error: " + error);
-					MediaScreenLogger.log("Error: " + error);
-					blockEntity.setPlaying(false);
-					playButton.active = true;
+					if (requestId != playbackRequestId) return;
+					log("Error: " + error);
+					setPlaying(false);
+					playbackStarting = false;
 				});
 			}
 		);
 	}
 
 	private void onStop() {
-		VideoManager.stopPlayer(blockEntity.getPos());
-		blockEntity.setPlaying(false);
-		playButton.active = true;
-		debugLog.add("Stopped");
-		MediaScreenLogger.log("Stopped");
+		playbackRequestId++;
+		playbackStarting = false;
+		VideoManager.stopPlayer(getBlockEntity().getPos());
+		setPlaying(false);
+		log("Stopped");
 	}
 
 	@Override
@@ -231,31 +295,108 @@ public class MediaScreenScreen extends Screen {
 	}
 
 	@Override
-	public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-		int lineH = textRenderer.fontHeight + 4;
-		int maxLines = Math.max(1, logH / lineH);
-		int total = debugLog.size();
-		int maxScroll = Math.max(0, total - maxLines);
-		if (mouseX >= logX && mouseX <= logX + logW && mouseY >= logY && mouseY <= logY + logH) {
-			logScroll -= (int) vertical;
-			logScroll = Math.max(0, Math.min(logScroll, maxScroll));
+	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		if (keyCode == 257 && urlField.isFocused()) {
+			onPlay();
 			return true;
 		}
-		return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
+		return super.keyPressed(keyCode, scanCode, modifiers);
+	}
+
+	@Override
+	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+		if (isInside(mouseX, mouseY, searchX, searchY, searchW, searchH)) {
+			onPlay();
+			return true;
+		}
+		if (isInside(mouseX, mouseY, playX - 4, playY - 4, 20, 22)) {
+			onPlay();
+			return true;
+		}
+		if (isInside(mouseX, mouseY, pauseX - 4, pauseY - 4, 20, 22)) {
+			onStop();
+			return true;
+		}
+		if (isInside(mouseX, mouseY, targetSliderX, targetSliderY + 10, sliderW, 12)) {
+			activeSlider = 1;
+			updateSlider(mouseX);
+			return true;
+		}
+		if (isInside(mouseX, mouseY, capSliderX, capSliderY + 10, sliderW, 12)) {
+			activeSlider = 2;
+			updateSlider(mouseX);
+			return true;
+		}
+
+		return super.mouseClicked(mouseX, mouseY, button);
+	}
+
+	@Override
+	public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+		if (activeSlider != 0) {
+			updateSlider(mouseX);
+			return true;
+		}
+		return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+	}
+
+	@Override
+	public boolean mouseReleased(double mouseX, double mouseY, int button) {
+		activeSlider = 0;
+		return super.mouseReleased(mouseX, mouseY, button);
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		if (isInside(mouseX, mouseY, logX, logY, logW, logH)) {
+			int lineH = textRenderer.fontHeight + 2;
+			int maxLines = Math.max(1, (logH - 12) / lineH);
+			int maxScroll = Math.max(0, debugLog.size() - maxLines);
+			logScroll = Math.max(0, Math.min(maxScroll, logScroll - (int) Math.signum(verticalAmount)));
+			return true;
+		}
+		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
 	}
 
 	@Override
 	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
 		RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+		layoutWidgets();
 
-		computeLayout();
-		int panelX = (width - PANEL_W) / 2;
-		int panelY = (height - PANEL_H) / 2;
+		currentPlayer = VideoManager.getPlayer(getBlockEntity().getPos());
+		boolean isPlaying = currentPlayer != null && currentPlayer.isRunning();
 
-		drawPanel(context, panelX, panelY, PANEL_W, PANEL_H);
+		drawPanel(context);
+		drawTopBar(context, mouseX, mouseY, delta, isPlaying || playbackStarting);
+		drawPreviewArea(context, isPlaying);
+		drawDebugLog(context);
+		drawFpsSliders(context);
 
-		VideoPlayer currentPlayer = VideoManager.getPlayer(blockEntity.getPos());
-		if (currentPlayer != null && currentPlayer.getTexture() != null) {
+		syncLogFromPlayer();
+	}
+
+	private void drawPanel(DrawContext context) {
+		context.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xFFE1E1E1);
+	}
+
+	private void drawTopBar(DrawContext context, int mouseX, int mouseY, float delta, boolean isPlaying) {
+		context.fill(urlX, urlY, urlX + urlW, urlY + urlH, 0xFF817D7D);
+		context.drawText(textRenderer, urlField.getText().isEmpty() ? "URL YOUTUBE VIDEOS GOES HERE" : "", urlX + 48, urlY + 14, 0xFFE8E8E8, false);
+		drawEditIcon(context, urlX + urlW - 36, urlY + 11, 0xFF191A20);
+		urlField.render(context, mouseX, mouseY, delta);
+
+		drawPlayIcon(context, playX, playY, isPlaying ? 0xFF191A20 : 0xFF303035);
+		drawPauseIcon(context, pauseX, pauseY, isPlaying ? 0xFF303035 : 0xFF191A20);
+
+		context.fill(searchX, searchY, searchX + searchW, searchY + searchH, 0xFF4D4A4A);
+		context.drawCenteredTextWithShadow(textRenderer, "Search", searchX + searchW / 2 - 10, searchY + 14, 0xFFE9E9E9);
+		drawSearchIcon(context, searchX + searchW - 31, searchY + 10, 0xFF191A20);
+	}
+
+	private void drawPreviewArea(DrawContext context, boolean isPlaying) {
+		context.fill(previewX, previewY, previewX + previewW, previewY + previewH, 0xFF927F7F);
+
+		if (isPlaying && currentPlayer != null && currentPlayer.getTexture() != null) {
 			VideoTexture tex = currentPlayer.getTexture();
 			if (tex.getWidth() > 0 && tex.getHeight() > 0) {
 				int texW = previewW;
@@ -266,64 +407,122 @@ public class MediaScreenScreen extends Screen {
 				}
 				int drawX = previewX + (previewW - texW) / 2;
 				int drawY = previewY + (previewH - texH) / 2;
-
 				drawTextureQuad(context, tex, drawX, drawY, texW, texH);
-
-				context.drawCenteredTextWithShadow(textRenderer, "PREVIEW", previewX + previewW / 2, previewY - 12, 0x888888);
 			}
 		} else {
-			context.drawCenteredTextWithShadow(textRenderer, "PREVIEW", previewX + previewW / 2, previewY + previewH / 2 - 4, 0x555555);
+			context.drawCenteredTextWithShadow(textRenderer, "Video Preview", previewX + previewW / 2, previewY + previewH / 2 - 4, 0xFFFFFFFF);
 		}
+	}
 
-		int logBgX = logX - 2;
-		int logBgY = logY - 2;
-		int logBgW = logW + 4;
-		int logBgH = logH + 4;
-		context.fill(logBgX, logBgY, logBgX + logBgW, logBgY + logBgH, 0xFF1A1A1A);
-		context.drawBorder(logBgX, logBgY, logBgW, logBgH, 0xFF3A3A3A);
+	private void drawDebugLog(DrawContext context) {
+		context.fill(logX, logY, logX + logW, logY + logH, 0xFF484343);
 
-		context.enableScissor(logX, logY, logX + logW, logY + logH);
-
-		int lineH = textRenderer.fontHeight + 4;
-		int maxLines = Math.max(1, logH / lineH);
+		int lineH = textRenderer.fontHeight + 2;
+		int maxLines = Math.max(1, (logH - 14) / lineH);
 		int total = debugLog.size();
 		int maxScroll = Math.max(0, total - maxLines);
-		logScroll = Math.min(logScroll, maxScroll);
-		int start = Math.max(0, total - maxLines + logScroll);
+		logScroll = Math.max(0, Math.min(logScroll, maxScroll));
+		int start = Math.max(0, total - maxLines - logScroll);
+		if (total == 0) {
+			context.drawText(textRenderer, "Debug log that's scrollable", logX + 74, logY + (logH - 8) / 2, 0xFFFFFFFF, false);
+			return;
+		}
 		for (int i = start; i < total && (i - start) < maxLines; i++) {
 			String line = debugLog.get(i);
-			int y = logY + (i - start) * lineH;
-			int color = line.startsWith("Error") || line.startsWith("FFMPEG NOT FOUND") ? 0xFF5555 :
-					   line.startsWith("Playing") ? 0x55FF55 : 0xDDDDDD;
-			context.drawText(textRenderer, line, logX + 2, y, color, false);
+			int y = logY + 7 + (i - start) * lineH;
+			int color;
+			if (line.contains("ERROR") || line.contains("FAILED")) {
+				color = 0xFFe05050;
+			} else if (line.contains("Warning") || line.contains("NOT FOUND")) {
+				color = 0xFFf0a030;
+			} else {
+				color = 0xFFEDEDED;
+			}
+			context.drawText(textRenderer, line, logX + 8, y, color, false);
 		}
+	}
 
-		context.disableScissor();
+	private void drawFpsSliders(DrawContext context) {
+		drawSlider(context, targetSliderX, targetSliderY, sliderW, "Target FPS", targetFps, 33, 120);
+		drawSlider(context, capSliderX, capSliderY, sliderW, "FPS Cap", fpsCap, 33, 144);
+		context.drawText(textRenderer, "Using " + getEffectiveFps() + " FPS", targetSliderX, capSliderY + 24, 0xFF303030, false);
+	}
 
-		urlField.render(context, mouseX, mouseY, delta);
-		playButton.render(context, mouseX, mouseY, delta);
-		stopButton.render(context, mouseX, mouseY, delta);
+	private void drawSlider(DrawContext context, int x, int y, int w, String label, int value, int min, int max) {
+		context.drawText(textRenderer, label + ": " + value, x, y, 0xFF303030, false);
+		int trackY = y + 14;
+		context.fill(x, trackY, x + w, trackY + 4, 0xFF817D7D);
+		int knobX = x + Math.round(((value - min) / (float) (max - min)) * w);
+		context.fill(knobX - 3, trackY - 4, knobX + 3, trackY + 8, 0xFF191A20);
+	}
 
-		syncLogFromPlayer();
+	private void updateSlider(double mouseX) {
+		if (activeSlider == 1) {
+			targetFps = sliderValue(mouseX, targetSliderX, sliderW, 33, 120);
+			if (targetFps > fpsCap) fpsCap = targetFps;
+		} else if (activeSlider == 2) {
+			fpsCap = sliderValue(mouseX, capSliderX, sliderW, 33, 144);
+			if (fpsCap < targetFps) targetFps = fpsCap;
+		}
+	}
+
+	private int sliderValue(double mouseX, int x, int w, int min, int max) {
+		float t = (float) ((mouseX - x) / Math.max(1.0, w));
+		t = Math.max(0f, Math.min(1f, t));
+		return min + Math.round(t * (max - min));
+	}
+
+	private int getEffectiveFps() {
+		return Math.max(33, Math.min(targetFps, fpsCap));
+	}
+
+	private boolean isInside(double mouseX, double mouseY, int x, int y, int w, int h) {
+		return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+	}
+
+	private void drawPlayIcon(DrawContext context, int x, int y, int color) {
+		context.fill(x, y + 1, x + 2, y + 15, color);
+		context.fill(x + 2, y + 3, x + 4, y + 13, color);
+		context.fill(x + 4, y + 5, x + 6, y + 11, color);
+		context.fill(x + 6, y + 7, x + 8, y + 9, color);
+	}
+
+	private void drawPauseIcon(DrawContext context, int x, int y, int color) {
+		context.fill(x, y + 1, x + 4, y + 15, color);
+		context.fill(x + 9, y + 1, x + 13, y + 15, color);
+	}
+
+	private void drawSearchIcon(DrawContext context, int x, int y, int color) {
+		context.drawBorder(x, y, 11, 11, color);
+		context.fill(x + 9, y + 9, x + 12, y + 12, color);
+		context.fill(x + 12, y + 12, x + 15, y + 15, color);
+	}
+
+	private void drawEditIcon(DrawContext context, int x, int y, int color) {
+		context.fill(x + 9, y, x + 13, y + 4, color);
+		context.fill(x + 7, y + 2, x + 11, y + 6, color);
+		context.fill(x + 5, y + 4, x + 9, y + 8, color);
+		context.fill(x + 3, y + 6, x + 7, y + 10, color);
+		context.fill(x + 1, y + 11, x + 5, y + 13, color);
 	}
 
 	private void drawTextureQuad(DrawContext context, VideoTexture tex, int x, int y, int w, int h) {
-		Identifier texId = tex.getOrRegisterIdentifier("video_gui_" + blockEntity.getPos().toShortString());
+		Identifier texId = tex.getOrRegisterIdentifier("video_gui_" + getBlockEntity().getPos().toShortString());
 		if (texId == null) return;
 		RenderLayer layer = RenderLayer.getEntityTranslucent(texId);
 
 		var entry = context.getMatrices().peek();
 		var vc = context.getVertexConsumers().getBuffer(layer);
 		int overlay = net.minecraft.client.render.OverlayTexture.DEFAULT_UV;
-		vc.vertex(entry, x, y + h, 0).color(0xFFFFFFFF).texture(0, 1).overlay(overlay).light(0xF000F0).normal(0f, 0f, 1f);
-		vc.vertex(entry, x + w, y + h, 0).color(0xFFFFFFFF).texture(1, 1).overlay(overlay).light(0xF000F0).normal(0f, 0f, 1f);
-		vc.vertex(entry, x + w, y, 0).color(0xFFFFFFFF).texture(1, 0).overlay(overlay).light(0xF000F0).normal(0f, 0f, 1f);
 		vc.vertex(entry, x, y, 0).color(0xFFFFFFFF).texture(0, 0).overlay(overlay).light(0xF000F0).normal(0f, 0f, 1f);
+		vc.vertex(entry, x + w, y, 0).color(0xFFFFFFFF).texture(1, 0).overlay(overlay).light(0xF000F0).normal(0f, 0f, 1f);
+		vc.vertex(entry, x + w, y + h, 0).color(0xFFFFFFFF).texture(1, 1).overlay(overlay).light(0xF000F0).normal(0f, 0f, 1f);
+		vc.vertex(entry, x, y + h, 0).color(0xFFFFFFFF).texture(0, 1).overlay(overlay).light(0xF000F0).normal(0f, 0f, 1f);
 		context.draw();
 	}
 
 	private void syncLogFromPlayer() {
-		VideoPlayer player = VideoManager.getPlayer(blockEntity.getPos());
+		VideoPlayer player = VideoManager.getPlayer(getBlockEntity().getPos());
 		if (player != null) {
 			for (String line : player.getDebugLog()) {
 				if (!debugLog.contains(line)) {
@@ -334,25 +533,41 @@ public class MediaScreenScreen extends Screen {
 		}
 	}
 
-	private void drawPanel(DrawContext context, int x, int y, int w, int h) {
-		int corner = 8;
-		int bg = 0xEE202020;
-		int border = 0xFF505050;
-		int mid = 0xEE2A2A2A;
-
-		context.fill(x + corner, y, x + w - corner, y + h, bg);
-		context.fill(x, y + corner, x + w, y + h - corner, bg);
-
-		context.fill(x + corner, y, x + w - corner, y + 1, border);
-		context.fill(x + corner, y + h - 1, x + w - corner, y + h, border);
-		context.fill(x, y + corner, x + 1, y + h - corner, border);
-		context.fill(x + w - 1, y + corner, x + w, y + h - corner, border);
-
-		context.fill(x, y, x + corner, y + corner, mid);
-		context.fill(x + w - corner, y, x + w, y + corner, mid);
-		context.fill(x, y + h - corner, x + corner, y + h, mid);
-		context.fill(x + w - corner, y + h - corner, x + w, y + h, mid);
+	public net.minecraft.block.entity.BlockEntity getBlockEntity() { 
+		return blockEntity; 
 	}
-
-	public MediaScreenBlockEntity getBlockEntity() { return blockEntity; }
+	
+	private String getYoutubeUrl() {
+		if (blockEntity instanceof MediaScreenBlockEntity mse) {
+			return mse.getYoutubeUrl();
+		} else if (blockEntity instanceof DisplayFrameBlockEntity dfe) {
+			return dfe.getYoutubeUrl();
+		}
+		return "";
+	}
+	
+	private void setYoutubeUrl(String url) {
+		if (blockEntity instanceof MediaScreenBlockEntity mse) {
+			mse.setYoutubeUrl(url);
+		} else if (blockEntity instanceof DisplayFrameBlockEntity dfe) {
+			dfe.setYoutubeUrl(url);
+		}
+	}
+	
+	private boolean isPlaying() {
+		if (blockEntity instanceof MediaScreenBlockEntity mse) {
+			return mse.isPlaying();
+		} else if (blockEntity instanceof DisplayFrameBlockEntity dfe) {
+			return dfe.isPlaying();
+		}
+		return false;
+	}
+	
+	private void setPlaying(boolean playing) {
+		if (blockEntity instanceof MediaScreenBlockEntity mse) {
+			mse.setPlaying(playing);
+		} else if (blockEntity instanceof DisplayFrameBlockEntity dfe) {
+			dfe.setPlaying(playing);
+		}
+	}
 }

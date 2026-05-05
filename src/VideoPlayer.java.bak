@@ -1,0 +1,244 @@
+package com.mediascreen.client;
+
+import net.minecraft.client.MinecraftClient;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.SourceDataLine;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+public class VideoPlayer {
+
+	private final String streamUrl;
+	private final Consumer<String> errorCallback;
+	private final AtomicBoolean running = new AtomicBoolean(false);
+	private Thread decodeThread;
+
+	private VideoTexture texture;
+	private volatile int videoWidth;
+	private volatile int videoHeight;
+
+	private Process videoProcess;
+	private SourceDataLine audioLine;
+	private Thread audioThread;
+
+	private byte[][] frameBuffers;
+
+	private final CopyOnWriteArrayList<String> debugLog = new CopyOnWriteArrayList<>();
+
+	private volatile float currentFps = 0f;
+	private int fpsFrameCount = 0;
+	private long fpsLastTimeNs = System.nanoTime();
+
+	private volatile boolean failed = false;
+	private volatile String failureReason = null;
+
+	public VideoPlayer(String streamUrl, int width, int height, Consumer<String> errorCallback) {
+		this.streamUrl = streamUrl;
+		this.errorCallback = errorCallback;
+		this.texture = new VideoTexture();
+		this.videoWidth = 854;
+		this.videoHeight = 480;
+	}
+
+	public void start() {
+		running.set(true);
+		decodeThread = new Thread(this::decodeLoop, "MediaScreen-VideoPlayer");
+		decodeThread.setDaemon(true);
+		decodeThread.start();
+	}
+
+	public void stop() {
+		running.set(false);
+		if (videoProcess != null) {
+			videoProcess.destroyForcibly();
+			try { videoProcess.waitFor(); } catch (InterruptedException ignored) {}
+			videoProcess = null;
+		}
+		if (decodeThread != null) {
+			try { decodeThread.join(2000); } catch (InterruptedException e) { decodeThread.interrupt(); }
+		}
+		if (audioThread != null) {
+			try { audioThread.join(1000); } catch (InterruptedException ignored) {}
+		}
+		if (audioLine != null) { audioLine.stop(); audioLine.close(); audioLine = null; }
+		frameBuffers = null;
+
+		MinecraftClient.getInstance().execute(() -> {
+			if (texture != null) {
+				texture.close();
+				texture = null;
+			}
+		});
+	}
+
+	public boolean isRunning() { return running.get(); }
+
+	private void addLog(String line) {
+		debugLog.add(line);
+		MediaScreenLogger.log(line);
+		if (debugLog.size() > 100) {
+			debugLog.remove(0);
+		}
+	}
+
+	public java.util.List<String> getDebugLog() {
+		return debugLog;
+	}
+
+	private void decodeLoop() {
+		try {
+			String ffmpeg = FFmpegManager.getFFmpegPath();
+			if (ffmpeg == null) throw new IOException("FFmpeg not found");
+
+			int frameSize = videoWidth * videoHeight * 3;
+
+			ProcessBuilder pb = new ProcessBuilder(
+				ffmpeg,
+				"-re",
+				"-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+				"-i", streamUrl,
+				"-loglevel", "quiet",
+				"-map", "0:v:0",
+				"-vf", "format=rgb24,scale=854:480",
+				"-f", "rawvideo",
+				"-pix_fmt", "rgb24",
+				"-s", "854x480",
+				"-fps_mode", "cfr",
+				"-r", "30",
+				"pipe:1",
+				"-map", "0:a:0",
+				"-f", "s16le",
+				"-acodec", "pcm_s16le",
+				"-ar", "44100",
+				"-ac", "2",
+				"pipe:2"
+			);
+			pb.redirectError(ProcessBuilder.Redirect.PIPE);
+			pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
+
+			videoProcess = pb.start();
+
+			Thread errorReader = new Thread(() -> {
+				try (InputStream err = videoProcess.getErrorStream()) {
+					byte[] buf = new byte[4096];
+					StringBuilder sb = new StringBuilder();
+					int read;
+					while ((read = err.read(buf)) != -1) {
+						if (!running.get()) break;
+						sb.append(new String(buf, 0, read));
+						if (sb.length() > 10000) break;
+					}
+					if (sb.length() > 0) {
+						String errMsg = sb.toString();
+						if (errMsg.toLowerCase().contains("error") || errMsg.toLowerCase().contains("invalid") || errMsg.toLowerCase().contains("failed")) {
+							addLog("FFmpeg error: " + errMsg.substring(0, Math.min(200, errMsg.length())));
+						}
+					}
+				} catch (IOException ignored) {}
+			}, "MediaScreen-FFmpegError");
+			errorReader.setDaemon(true);
+			errorReader.start();
+
+			AudioFormat format = new AudioFormat(44100, 16, 2, true, false);
+			DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+			if (javax.sound.sampled.AudioSystem.isLineSupported(info)) {
+				audioLine = (SourceDataLine) javax.sound.sampled.AudioSystem.getLine(info);
+				audioLine.open(format, 8820);
+				audioLine.start();
+				audioThread = new Thread(this::readAudio, "MediaScreen-Audio");
+				audioThread.setPriority(Thread.MAX_PRIORITY);
+				audioThread.start();
+			}
+
+			boolean firstFrame = true;
+			int writeIdx = 0;
+			frameBuffers = new byte[4][frameSize];
+			boolean normalEnd = false;
+			try (InputStream in = videoProcess.getInputStream()) {
+				while (running.get()) {
+					byte[] curBuf = frameBuffers[writeIdx];
+					int totalRead = 0;
+					boolean eof = false;
+					while (totalRead < frameSize && running.get()) {
+						int bytesRead = in.read(curBuf, totalRead, frameSize - totalRead);
+						if (bytesRead == -1) { eof = true; break; }
+						totalRead += bytesRead;
+					}
+					if (totalRead == frameSize && running.get()) {
+						byte[] frameCopy = new byte[frameSize];
+						System.arraycopy(curBuf, 0, frameCopy, 0, frameSize);
+						if (texture != null) {
+							if (firstFrame) texture.uploadFrame(frameCopy, videoWidth, videoHeight, true);
+							else texture.updateFrame(frameCopy, videoWidth, videoHeight);
+						}
+						firstFrame = false;
+						writeIdx = (writeIdx + 1) % frameBuffers.length;
+
+						fpsFrameCount++;
+						long fpsNow = System.nanoTime();
+						if (fpsNow - fpsLastTimeNs >= 1_000_000_000L) {
+							currentFps = (float)(fpsFrameCount * 1_000_000_000L) / (fpsNow - fpsLastTimeNs);
+							fpsFrameCount = 0;
+							fpsLastTimeNs = fpsNow;
+						}
+					}
+					if (eof) {
+						normalEnd = running.get();
+						if (!normalEnd) addLog("Stream stopped by user");
+						break;
+					}
+				}
+			}
+
+			if (normalEnd) {
+				addLog("Stream ended normally");
+			}
+		} catch (Exception e) {
+			failed = true;
+			failureReason = e.getMessage();
+			addLog("ERROR: " + e.getMessage());
+			if (errorCallback != null && running.get()) errorCallback.accept("Error: " + e.getMessage());
+		} finally {
+			running.set(false);
+			if (videoProcess != null) videoProcess.destroyForcibly();
+			if (audioLine != null) { audioLine.stop(); audioLine.close(); audioLine = null; }
+			frameBuffers = null;
+		}
+	}
+
+	private void readAudio() {
+		try (InputStream in = videoProcess.getErrorStream()) {
+			byte[] buf = new byte[16384];
+			int read;
+			while (running.get()) {
+				try {
+					read = in.read(buf);
+					if (read == -1) break;
+					if (audioLine != null) {
+						audioLine.write(buf, 0, read);
+					}
+				} catch (IOException e) {
+					if (running.get()) {
+						try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+						continue;
+					}
+					break;
+				}
+			}
+		} catch (IOException ignored) {}
+	}
+
+	public VideoTexture getTexture() { return texture; }
+	public int getVideoWidth() { return videoWidth; }
+	public int getVideoHeight() { return videoHeight; }
+	public float getFps() { return currentFps; }
+	public boolean hasFailed() { return failed; }
+	public String getFailureReason() { return failureReason; }
+}

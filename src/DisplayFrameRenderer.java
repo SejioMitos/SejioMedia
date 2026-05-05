@@ -1,7 +1,7 @@
 package com.mediascreen.client;
 
-import com.mediascreen.block.MediaScreenBlock;
-import com.mediascreen.block.MediaScreenBlockEntity;
+import com.mediascreen.block.DisplayFrameBlock;
+import com.mediascreen.block.DisplayFrameBlockEntity;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
@@ -11,9 +11,9 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.RotationAxis;
 
-public class MediaScreenRenderer implements BlockEntityRenderer<MediaScreenBlockEntity> {
+public class DisplayFrameRenderer implements BlockEntityRenderer<DisplayFrameBlockEntity> {
 
-	public MediaScreenRenderer(BlockEntityRendererFactory.Context ctx) {}
+	public DisplayFrameRenderer(BlockEntityRendererFactory.Context ctx) {}
 
 	private static final float SCREEN_MIN_X = 7.0f / 16.0f;
 	private static final float SCREEN_MAX_X = 8.0f / 16.0f;
@@ -24,7 +24,7 @@ public class MediaScreenRenderer implements BlockEntityRenderer<MediaScreenBlock
 	private static final float SURFACE_OFFSET = 0.01f;
 
 	@Override
-	public void render(MediaScreenBlockEntity entity, float tickDelta, MatrixStack matrices,
+	public void render(DisplayFrameBlockEntity entity, float tickDelta, MatrixStack matrices,
 			VertexConsumerProvider vertexConsumers, int light, int overlay) {
 
 		if (!entity.isPlaying()) return;
@@ -41,8 +41,8 @@ public class MediaScreenRenderer implements BlockEntityRenderer<MediaScreenBlock
 		if (tex.getWidth() == 0 || tex.getHeight() == 0) return;
 
 		Direction facing = Direction.NORTH;
-		if (entity.getCachedState().contains(MediaScreenBlock.FACING)) {
-			facing = entity.getCachedState().get(MediaScreenBlock.FACING);
+		if (entity.getCachedState().contains(DisplayFrameBlock.FACING)) {
+			facing = entity.getCachedState().get(DisplayFrameBlock.FACING);
 		}
 
 		matrices.push();
@@ -66,7 +66,7 @@ public class MediaScreenRenderer implements BlockEntityRenderer<MediaScreenBlock
 
 		VertexConsumer vc = vertexConsumers.getBuffer(layer);
 		var entry = matrices.peek();
-		ScreenUvMapper.UvRange uv = ScreenUvMapper.forMediaScreen(entity, facing);
+		ScreenUvMapper.UvRange uv = ScreenUvMapper.forDisplayFrame(entity, facing);
 		float uLeft = uv.maxU();
 		float uRight = uv.minU();
 

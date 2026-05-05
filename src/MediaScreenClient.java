@@ -1,8 +1,11 @@
 package com.mediascreen;
 
+import com.mediascreen.block.DisplayFrameBlock;
+import com.mediascreen.block.DisplayFrameBlockEntity;
 import com.mediascreen.block.MediaScreenBlock;
 import com.mediascreen.block.MediaScreenBlockEntity;
 import com.mediascreen.block.ModBlockEntities;
+import com.mediascreen.client.DisplayFrameRenderer;
 import com.mediascreen.client.MediaScreenLogger;
 import com.mediascreen.client.MediaScreenRenderer;
 import com.mediascreen.client.MediaScreenScreen;
@@ -18,9 +21,13 @@ public class MediaScreenClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		MediaScreenLogger.clearLog();
-		BlockEntityRendererRegistry.register(ModBlockEntities.MEDIA_SCREEN, MediaScreenRenderer::new);
-		MediaScreenBlock.openScreenClient = mse -> {
-			MinecraftClient.getInstance().setScreen(new MediaScreenScreen(mse));
+		//BlockEntityRendererRegistry.register(ModBlockEntities.MEDIA_SCREEN, MediaScreenRenderer::new);
+		BlockEntityRendererRegistry.register(ModBlockEntities.DISPLAY_FRAME, DisplayFrameRenderer::new);
+		//MediaScreenBlock.openScreenClient = mse -> {
+		//	MinecraftClient.getInstance().setScreen(new MediaScreenScreen(mse));
+		//};
+		DisplayFrameBlock.openScreenClient = dfe -> {
+			MinecraftClient.getInstance().setScreen(new MediaScreenScreen(dfe));
 		};
 
 		int[] tickCounter = {0};

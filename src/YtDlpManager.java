@@ -131,14 +131,16 @@ public class YtDlpManager {
 				while (attempts < 5) {
 					try {
 						ProcessBuilder infoPb = new ProcessBuilder(
-							ytDlp.toString(),
-							"--no-playlist",
-							"--print", "%(url)s,%(width)s,%(height)s",
-							"--format", "bestvideo[height<=480][ext=mp4]+bestaudio/best[height<=480]/best[height<=480]",
-							"--no-warnings",
-							"--extractor-args", "youtube:player_client=android",
-							youtubeUrl
-						);
+						ytDlp.toString(),
+						"--no-playlist",
+						"--print", "%(url)s",
+						"--print", "%(width)s",
+						"--print", "%(height)s",
+						"--format", "best[height<=720]/best",
+						"--no-warnings",
+						 "--extractor-args", "youtube:player_client=android",
+						youtubeUrl
+					);
 						infoPb.redirectError(ProcessBuilder.Redirect.PIPE);
 						infoProcess = infoPb.start();
 						break;
@@ -149,33 +151,49 @@ public class YtDlpManager {
 					}
 				}
 
-				String output;
+				// Read stderr in background to prevent process blocking
+				StringBuilder errSb = new StringBuilder();
+				Process finalInfoProcess = infoProcess;
+				Thread errThread = new Thread(() -> {
+					try (BufferedReader er = new BufferedReader(new InputStreamReader(finalInfoProcess.getErrorStream()))) {
+						String l;
+						while ((l = er.readLine()) != null) errSb.append(l).append("\n");
+					} catch (IOException ignored) {}
+				});
+				errThread.setDaemon(true);
+				errThread.start();
+
+				// Read stdout line by line — each --print arg produces one line
+				String directUrl = "";
+				int width = 1280;
+				int height = 720;
 				try (BufferedReader reader = new BufferedReader(new InputStreamReader(infoProcess.getInputStream()))) {
-					StringBuilder sb = new StringBuilder();
-					String line;
-					while ((line = reader.readLine()) != null) sb.append(line);
-					output = sb.toString().trim();
+					String urlLine = reader.readLine();
+					String widthLine = reader.readLine();
+					String heightLine = reader.readLine();
+					if (urlLine != null) directUrl = urlLine.trim();
+					if (widthLine != null && !widthLine.trim().equals("NA")) {
+						try { width = Integer.parseInt(widthLine.trim()); } catch (NumberFormatException ignored) {}
+					}
+					if (heightLine != null && !heightLine.trim().equals("NA")) {
+						try { height = Integer.parseInt(heightLine.trim()); } catch (NumberFormatException ignored) {}
+					}
 				}
 
+				errThread.join(3000);
 				int exitCode = infoProcess.waitFor();
-				if (exitCode != 0 || output.isEmpty()) {
-					String err;
-					try (BufferedReader reader = new BufferedReader(new InputStreamReader(infoProcess.getErrorStream()))) {
-						StringBuilder sb = new StringBuilder();
-						String line;
-						while ((line = reader.readLine()) != null) sb.append(line).append("\n");
-						err = sb.toString();
-					}
+				String err = errSb.toString();
+
+				if (exitCode != 0 || directUrl.isEmpty()) {
+					MediaScreenLogger.log("yt-dlp stderr: " + err);
 					if (err.contains("429") || err.contains("HTTP Error 429")) {
-						throw new RuntimeException("YouTube 429: Rate limited! Try updating yt-dlp using the button in the GUI.");
+						throw new RuntimeException("YouTube rate limited (429). Try again in a moment.");
 					}
-					throw new RuntimeException("yt-dlp failed: " + err);
+					throw new RuntimeException("yt-dlp failed: " + err.trim());
 				}
 
-				String[] parts = output.split(",");
-				String directUrl = parts[0].trim();
-				int width = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1280;
-				int height = parts.length > 2 ? Integer.parseInt(parts[2].trim()) : 720;
+				MediaScreenLogger.log("Resolved URL: " + directUrl.substring(0, Math.min(80, directUrl.length())) + "...");
+				MediaScreenLogger.log("Resolution: " + width + "x" + height);
 
 				return new StreamInfo(directUrl, width, height);
 			} catch (Exception e) {

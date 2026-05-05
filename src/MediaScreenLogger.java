@@ -6,7 +6,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 public class MediaScreenLogger {
-    private static final Path LOG_PATH = Path.of("C:\\Users\\rosMa\\Desktop\\SejioMedia\\mediascreen.log");
+    private static final Path LOG_PATH = net.fabricmc.loader.api.FabricLoader.getInstance()
+        .getGameDir().resolve("mediascreen").resolve("mediascreen.log");
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     public static void log(String message) {
