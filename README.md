@@ -52,19 +52,6 @@ All three tools are downloaded automatically to `.minecraft/mediascreen/` and on
 |-------|-------------|
 | `Display Frame` | Flat display frame variant with the same playback functionality |
 
----
-
-## Current Limitations
-
-- Singleplayer only — multiplayer support is planned
-- Early release, expect bugs and rough edges
-
----
-
-## Planned Features
-
-- Multiplayer support (synchronized playback across clients)
-- Redesigned GUI with collapsible debug lo
 
 ---
 
