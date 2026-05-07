@@ -12,10 +12,10 @@
 ## Requirements
 
 - Minecraft 1.21
-- [Fabric Loader](https://fabricmc.net/use/installer/) ≥ 0.15.0
+- [Fabric Loader](https://fabricmc.net/use/installer/) Any version
 - [Fabric API](https://modrinth.com/mod/fabric-api)
 - Java 21
-- Windows only — Mac and Linux are not currently supported
+- No Mac/Linux support ever
 ---
 
 ## Legal
