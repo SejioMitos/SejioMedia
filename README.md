@@ -20,6 +20,41 @@
 
 ---
 
-## Legal
 
-This mod downloads [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), and [VLC](https://www.videolan.org/) at runtime. These are open-source tools distributed under their respective licenses. Users are responsible for ensuring their usage complies with the terms of any content they stream.
+# Legal & Licensing
+
+This mod downloads and uses several open-source tools at runtime in order to function properly.
+
+By using this mod, you acknowledge and agree to the licenses of the following third-party components:
+
+---
+
+## Third-Party Components
+
+### VLC Media Player
+- License: GNU General Public License v2.0 (GPLv2)
+- Source Code: https://www.videolan.org/vlc/
+
+### FFmpeg
+- License: GNU Lesser General Public License v2.1 or later (LGPL 2.1+)
+- Source Code: https://ffmpeg.org/
+
+### yt-dlp
+- License: The Unlicense (Public Domain)
+- Source Code: https://github.com/yt-dlp/yt-dlp
+
+---
+
+## SejioMedia License
+
+This mod (**SejioMedia**) is licensed under the MIT License.
+
+SejioMedia is an independent project and remains a separate work from the third-party tools listed above. The licenses of those tools apply only to their respective components.
+
+---
+
+## User Responsibility
+
+Users are responsible for complying with the Terms of Service and applicable policies of any platforms accessed through this mod, including but not limited to YouTube.
+
+The developers of SejioMedia do not endorse or encourage copyright infringement or misuse of third-party services.
