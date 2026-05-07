@@ -20,12 +20,11 @@
 
 ---
 
-
 # Legal & Licensing
 
-This mod downloads and uses several open-source tools at runtime in order to function properly.
+This project integrates multiple third-party open-source components at runtime to enable media playback functionality.
 
-By using this mod, you acknowledge and agree to the licenses of the following third-party components:
+By using this software, you agree to comply with the licenses of all included dependencies.
 
 ---
 
@@ -33,28 +32,39 @@ By using this mod, you acknowledge and agree to the licenses of the following th
 
 ### VLC Media Player
 - License: GNU General Public License v2.0 (GPLv2)
-- Source Code: https://www.videolan.org/vlc/
+- Source: https://www.videolan.org/vlc/
 
 ### FFmpeg
 - License: GNU Lesser General Public License v2.1 or later (LGPL 2.1+)
-- Source Code: https://ffmpeg.org/
+- Source: https://ffmpeg.org/
 
 ### yt-dlp
 - License: The Unlicense (Public Domain)
-- Source Code: https://github.com/yt-dlp/yt-dlp
+- Source: https://github.com/yt-dlp/yt-dlp
 
 ---
 
-## SejioMedia License
+## Project License (SejioMedia)
 
-This mod (**SejioMedia**) is licensed under the MIT License.
+SejioMedia is licensed under the **MIT License**, unless otherwise stated in specific components.
 
-SejioMedia is an independent project and remains a separate work from the third-party tools listed above. The licenses of those tools apply only to their respective components.
+This project depends on third-party libraries with their own licenses (GPL/LGPL/Unlicense). Those licenses apply independently to their respective components.
+
+- SejioMedia source code: MIT licensed  
+- VLC, FFmpeg, yt-dlp: retain their original licenses  
+- Redistribution must comply with all applicable third-party license terms  
+
+---
+
+## Important Compatibility Note
+
+Because VLC is licensed under **GPLv2**, usage via runtime libraries such as **:contentReference[oaicite:0]{index=0}** may impose GPL obligations depending on how the library is bundled or distributed.
 
 ---
 
 ## User Responsibility
 
-Users are responsible for complying with the Terms of Service and applicable policies of any platforms accessed through this mod, including but not limited to YouTube.
-
-The developers of SejioMedia do not endorse or encourage copyright infringement or misuse of third-party services.
+Users are responsible for complying with:
+- Platform Terms of Service (e.g., YouTube)
+- Applicable copyright laws
+- License terms of third-party components used by this software
