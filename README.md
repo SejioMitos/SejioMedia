@@ -6,6 +6,7 @@
   <img src="https://img.shields.io/badge/Loader-Fabric-blue"/>
   <img src="https://img.shields.io/badge/Version-2.0-orange"/>
   <a href="https://discord.gg/nqPjgKM8dg"><img src="https://img.shields.io/badge/Discord-Join-5865F2"/></a>
+  <a href="https://docs.google.com/forms/d/e/1FAIpQLSdlVb2Qslc8EyxIqykgxy25DTtyK9vR8n47TEvJrcanZr-OJg/viewform"><img src="https://img.shields.io/badge/Support-Gift_Card-yellow?style=flat&logo=googleforms"/></a>
 </p>
 
 ---
@@ -16,6 +17,7 @@
 - [Fabric API](https://modrinth.com/mod/fabric-api)
 - Java 21
 - No Mac/Linux support ever
+
 ---
 
 ## Legal
